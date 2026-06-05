@@ -1,0 +1,28 @@
+spring:
+  application:
+    name: rest-task
+  datasource:
+    url: jdbc:h2:mem:rest_task
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: root123
+
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+
+logging:
+  level:
+    com.epam.hibernate: DEBUG
+    org.hibernate.SQL: DEBUG
+  pattern:
+      console: "%d{HH:mm:ss} [%X{transactionId}] %-5level %logger{36} - %msg%n"
