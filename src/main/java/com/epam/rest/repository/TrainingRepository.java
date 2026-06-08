@@ -41,4 +41,9 @@ public interface TrainingRepository extends JpaRepository<Training, Long> {
             @Param("toDate") LocalDate toDate,
             @Param("traineeName") String traineeName
     );
+
+
+    List<Training> findByTrainerUserUsername(String trainerUsername);
+
+    void deleteAllByTraineeUserUsername(String traineeUsername);
 }
