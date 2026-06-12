@@ -4,6 +4,7 @@ import com.epam.rest.dto.request.*;
 import com.epam.rest.dto.response.*;
 import com.epam.rest.entity.*;
 import com.epam.rest.exception.NotFoundException;
+import com.epam.rest.metrics.GymMetrics;
 import com.epam.rest.repository.*;
 import com.epam.rest.service.TraineeService;
 import lombok.RequiredArgsConstructor;
@@ -27,18 +28,25 @@ public class TraineeServiceImpl implements TraineeService {
     private final UserRepository userRepository;
     private final UsernamePasswordGenerator generator;
     private final BCryptPasswordEncoder passwordEncoder;
+    private final GymMetrics gymMetrics;
 
     @Override
     @Transactional
     public RegistrationResponse register(TraineeRegistrationRequest req) {
         log.debug("Registering trainee: {} {}", req.firstName(), req.lastName());
 
-        String username = generator.generateUsername(req.firstName(), req.lastName());
+        String username    = generator.generateUsername(req.firstName(), req.lastName());
         String rawPassword = generator.generatePassword();
 
+        if (trainerRepository.existsByUserUsername(username)) {
+            log.warn("Registration rejected: user '{}' is already registered as a trainer", username);
+            throw new IllegalStateException(
+                    "User '" + username + "' is already registered as a trainer. " +
+                            "A user cannot be both a trainee and a trainer.");
+        }
+
         User user = User.builder()
-                .firstName(req.firstName())
-                .lastName(req.lastName())
+                .firstName(req.firstName()).lastName(req.lastName())
                 .username(username)
                 .password(passwordEncoder.encode(rawPassword))
                 .isActive(true)
@@ -51,6 +59,11 @@ public class TraineeServiceImpl implements TraineeService {
                 .build();
 
         traineeRepository.save(trainee);
+
+        gymMetrics.incrementTraineeRegistration();
+        long activeCount = traineeRepository.countByUserIsActiveTrue();
+        gymMetrics.setActiveTrainees((int) activeCount);
+
         log.info("Trainee registered with username: {}", username);
         return new RegistrationResponse(username, rawPassword);
     }
@@ -58,29 +71,24 @@ public class TraineeServiceImpl implements TraineeService {
     @Override
     @Transactional(readOnly = true)
     public TraineeProfileResponse getProfile(String username) {
-        Trainee trainee = findTrainee(username);
-        return mapToProfile(trainee);
+        return mapToProfile(findTrainee(username));
     }
 
     @Override
     @Transactional
     public UpdateTraineeResponse updateProfile(UpdateTraineeRequest req) {
         Trainee trainee = findTrainee(req.username());
-
         User user = trainee.getUser();
         user.setFirstName(req.firstName());
         user.setLastName(req.lastName());
         user.setIsActive(req.isActive());
-
         trainee.setDateOfBirth(req.dateOfBirth());
         trainee.setAddress(req.address());
-
         traineeRepository.save(trainee);
         log.info("Trainee profile updated: {}", req.username());
 
         List<TrainerShortResponse> trainerList = trainee.getTrainers().stream()
-                .map(this::toTrainerShort)
-                .toList();
+                .map(this::toTrainerShort).toList();
 
         return new UpdateTraineeResponse(
                 user.getUsername(), user.getFirstName(), user.getLastName(),
@@ -95,6 +103,10 @@ public class TraineeServiceImpl implements TraineeService {
         Trainee trainee = findTrainee(username);
         trainingRepository.deleteAllByTraineeUserUsername(username);
         traineeRepository.delete(trainee);
+
+        long activeCount = traineeRepository.countByUserIsActiveTrue();
+        gymMetrics.setActiveTrainees((int) activeCount);
+
         log.info("Trainee deleted: {}", username);
     }
 
@@ -103,14 +115,12 @@ public class TraineeServiceImpl implements TraineeService {
     public List<TrainerShortResponse> getUnassignedActiveTrainers(String traineeUsername) {
         Trainee trainee = findTrainee(traineeUsername);
         Set<Long> assignedIds = trainee.getTrainers().stream()
-                .map(Trainer::getId)
-                .collect(Collectors.toSet());
+                .map(Trainer::getId).collect(Collectors.toSet());
 
         return trainerRepository.findAll().stream()
                 .filter(t -> !assignedIds.contains(t.getId()))
                 .filter(t -> Boolean.TRUE.equals(t.getUser().getIsActive()))
-                .map(this::toTrainerShort)
-                .toList();
+                .map(this::toTrainerShort).toList();
     }
 
     @Override
@@ -118,15 +128,12 @@ public class TraineeServiceImpl implements TraineeService {
     public List<TrainerShortResponse> updateTrainers(String traineeUsername,
                                                      List<String> trainerUsernames) {
         Trainee trainee = findTrainee(traineeUsername);
-
         Set<Trainer> newTrainers = trainerUsernames.stream()
                 .map(u -> trainerRepository.findByUserUsername(u)
                         .orElseThrow(() -> new NotFoundException("Trainer not found: " + u)))
                 .collect(Collectors.toSet());
-
         trainee.setTrainers(newTrainers);
         traineeRepository.save(trainee);
-
         return newTrainers.stream().map(this::toTrainerShort).toList();
     }
 
@@ -139,12 +146,10 @@ public class TraineeServiceImpl implements TraineeService {
                 .findTraineeTrainingsByCriteria(username, from, to, trainerName, trainingType)
                 .stream()
                 .map(t -> new TrainingResponse(
-                        t.getTrainingName(),
-                        t.getTrainingDate(),
+                        t.getTrainingName(), t.getTrainingDate(),
                         t.getTrainingType().getTrainingTypeName(),
                         t.getTrainingDuration(),
-                        t.getTrainer().getUser().getUsername()
-                ))
+                        t.getTrainer().getUser().getUsername()))
                 .toList();
     }
 
@@ -159,10 +164,13 @@ public class TraineeServiceImpl implements TraineeService {
         }
         user.setIsActive(req.isActive());
         userRepository.save(user);
+
+        long activeCount = traineeRepository.countByUserIsActiveTrue();
+        gymMetrics.setActiveTrainees((int) activeCount);
+
         log.info("Trainee {} set isActive={}", req.username(), req.isActive());
     }
 
-    // ── helpers ────────────────────────────────────────
     private Trainee findTrainee(String username) {
         return traineeRepository.findByUserUsername(username)
                 .orElseThrow(() -> new NotFoundException("Trainee not found: " + username));
@@ -170,21 +178,16 @@ public class TraineeServiceImpl implements TraineeService {
 
     private TraineeProfileResponse mapToProfile(Trainee t) {
         return new TraineeProfileResponse(
-                t.getUser().getFirstName(),
-                t.getUser().getLastName(),
-                t.getDateOfBirth(),
-                t.getAddress(),
-                t.getUser().getIsActive(),
+                t.getUser().getFirstName(), t.getUser().getLastName(),
+                t.getDateOfBirth(), t.getAddress(), t.getUser().getIsActive(),
                 t.getTrainers().stream().map(this::toTrainerShort).toList()
         );
     }
 
     private TrainerShortResponse toTrainerShort(Trainer tr) {
         return new TrainerShortResponse(
-                tr.getUser().getUsername(),
-                tr.getUser().getFirstName(),
-                tr.getUser().getLastName(),
-                tr.getSpecialization()
+                tr.getUser().getUsername(), tr.getUser().getFirstName(),
+                tr.getUser().getLastName(), tr.getSpecialization()
         );
     }
 }

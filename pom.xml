@@ -46,6 +46,18 @@
             <artifactId>spring-boot-starter-validation</artifactId>
         </dependency>
 
+        <!-- ✅ Spring Boot Actuator -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+
+        <!-- ✅ Micrometer Prometheus Registry -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
+        </dependency>
+
         <!-- Spring Security Crypto (for password encoding) -->
         <dependency>
             <groupId>org.springframework.security</groupId>
@@ -93,14 +105,14 @@
             <scope>test</scope>
         </dependency>
 
-        <!-- AssertJ (Better assertions) -->
+        <!-- AssertJ -->
         <dependency>
             <groupId>org.assertj</groupId>
             <artifactId>assertj-core</artifactId>
             <scope>test</scope>
         </dependency>
 
-        <!-- Hamcrest (for jsonPath matchers) -->
+        <!-- Hamcrest -->
         <dependency>
             <groupId>org.hamcrest</groupId>
             <artifactId>hamcrest</artifactId>
@@ -110,7 +122,6 @@
 
     <build>
         <plugins>
-            <!-- Spring Boot Maven Plugin -->
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
@@ -124,7 +135,6 @@
                 </configuration>
             </plugin>
 
-            <!-- Maven Compiler Plugin -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
@@ -142,7 +152,6 @@
                 </configuration>
             </plugin>
 
-            <!-- Maven Surefire Plugin (for running tests) -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
@@ -155,36 +164,24 @@
                 </configuration>
             </plugin>
 
-            <!-- JaCoCo Maven Plugin -->
             <plugin>
                 <groupId>org.jacoco</groupId>
                 <artifactId>jacoco-maven-plugin</artifactId>
                 <version>${jacoco.version}</version>
                 <executions>
-                    <!-- Prepare agent before tests -->
                     <execution>
                         <id>prepare-agent</id>
-                        <goals>
-                            <goal>prepare-agent</goal>
-                        </goals>
+                        <goals><goal>prepare-agent</goal></goals>
                     </execution>
-
-                    <!-- Generate report after tests -->
                     <execution>
                         <id>report</id>
                         <phase>test</phase>
-                        <goals>
-                            <goal>report</goal>
-                        </goals>
+                        <goals><goal>report</goal></goals>
                     </execution>
-
-                    <!-- Check coverage rules -->
                     <execution>
                         <id>check</id>
                         <phase>verify</phase>
-                        <goals>
-                            <goal>check</goal>
-                        </goals>
+                        <goals><goal>check</goal></goals>
                         <configuration>
                             <rules>
                                 <rule>
@@ -209,6 +206,8 @@
                                 <exclude>**/RESTTaskApplication.class</exclude>
                                 <exclude>**/config/**/*</exclude>
                                 <exclude>**/exception/**/*</exclude>
+                                <exclude>**/health/**/*</exclude>
+                                <exclude>**/metrics/**/*</exclude>
                             </excludes>
                         </configuration>
                     </execution>

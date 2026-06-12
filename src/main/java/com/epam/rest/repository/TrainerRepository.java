@@ -8,4 +8,8 @@ import java.util.Optional;
 public interface TrainerRepository extends JpaRepository<Trainer, Long> {
 
     Optional<Trainer> findByUserUsername(String username);
+
+    long countByUserIsActiveTrue();
+    boolean existsByUserUsername(String username);
+
 }

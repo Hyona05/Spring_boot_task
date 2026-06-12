@@ -10,6 +10,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -23,6 +24,7 @@ import java.util.UUID;
 public class AuthAndLoggingFilter extends OncePerRequestFilter {
 
     private final UserRepository userRepository;
+    private final BCryptPasswordEncoder passwordEncoder;
     private static final String TRANSACTION_ID = "transactionId";
 
     @Override
@@ -55,6 +57,7 @@ public class AuthAndLoggingFilter extends OncePerRequestFilter {
         if (authHeader == null || !authHeader.startsWith("Basic ")) {
             log.warn("[{}] Missing or invalid Authorization header", transactionId);
             response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            response.setContentType("application/json");
             response.getWriter().write("{\"error\":\"Authentication required\"}");
             MDC.clear();
             return;
@@ -70,8 +73,16 @@ public class AuthAndLoggingFilter extends OncePerRequestFilter {
             }
 
             String username = parts[0];
+            String rawPassword = parts[1];
+
             User user = userRepository.findByUsername(username)
-                    .orElseThrow(() -> new AuthException("User not found"));
+                    .orElseThrow(() -> new AuthException("Invalid credentials"));
+
+            // ✅ FIX 2: Parolni BCrypt hash bilan solishtirish — BU ENG MUHIM TUZATISH
+            if (!passwordEncoder.matches(rawPassword, user.getPassword())) {
+                log.warn("[{}] Invalid password attempt for user '{}'", transactionId, username);
+                throw new AuthException("Invalid credentials");
+            }
 
             if (!Boolean.TRUE.equals(user.getIsActive())) {
                 throw new AuthException("User is inactive");
@@ -103,6 +114,7 @@ public class AuthAndLoggingFilter extends OncePerRequestFilter {
                 uri.equals("/api/auth/login") ||
                 uri.startsWith("/swagger-ui") ||
                 uri.startsWith("/v3/api-docs") ||
+                uri.startsWith("/actuator") ||
                 uri.startsWith("/h2-console");
     }
 }

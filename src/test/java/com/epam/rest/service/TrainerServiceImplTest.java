@@ -4,6 +4,7 @@ import com.epam.rest.dto.request.*;
 import com.epam.rest.dto.response.*;
 import com.epam.rest.entity.*;
 import com.epam.rest.exception.NotFoundException;
+import com.epam.rest.metrics.GymMetrics;
 import com.epam.rest.repository.*;
 import com.epam.rest.service.impl.TrainerServiceImpl;
 import com.epam.rest.service.impl.UsernamePasswordGenerator;
@@ -16,23 +17,25 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import java.util.*;
 
 import static org.assertj.core.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.BDDMockito.*;
 
 @ExtendWith(MockitoExtension.class)
 @DisplayName("TrainerServiceImpl Unit Tests")
 class TrainerServiceImplTest {
 
-    @Mock TrainerRepository trainerRepository;
-    @Mock TrainingRepository trainingRepository;
-    @Mock UserRepository userRepository;
+    @Mock TrainerRepository         trainerRepository;
+    @Mock TraineeRepository         traineeRepository;
+    @Mock TrainingRepository        trainingRepository;
+    @Mock UserRepository            userRepository;
     @Mock UsernamePasswordGenerator generator;
-    @Mock BCryptPasswordEncoder passwordEncoder;
+    @Mock BCryptPasswordEncoder     passwordEncoder;
+    @Mock GymMetrics                gymMetrics;
 
     @InjectMocks TrainerServiceImpl service;
 
     private Trainer sampleTrainer;
-    private User sampleUser;
+    private User    sampleUser;
 
     @BeforeEach
     void setUp() {
@@ -48,20 +51,44 @@ class TrainerServiceImplTest {
                 .build();
     }
 
+
     @Test
     @DisplayName("register: should create trainer and return credentials")
     void register_success() {
         var req = new TrainerRegistrationRequest("Alice", "Smith", "Yoga");
+
         given(generator.generateUsername("Alice", "Smith")).willReturn("Alice.Smith");
         given(generator.generatePassword()).willReturn("pass1234XY");
         given(passwordEncoder.encode("pass1234XY")).willReturn("encoded");
+        given(traineeRepository.existsByUserUsername("Alice.Smith")).willReturn(false); // ✅
         given(trainerRepository.save(any())).willReturn(sampleTrainer);
+        given(trainerRepository.countByUserIsActiveTrue()).willReturn(1L);
+        willDoNothing().given(gymMetrics).incrementTrainerRegistration();
+        willDoNothing().given(gymMetrics).setActiveTrainers(anyInt());
 
         RegistrationResponse resp = service.register(req);
 
         assertThat(resp.username()).isEqualTo("Alice.Smith");
         assertThat(resp.password()).isEqualTo("pass1234XY");
+        then(gymMetrics).should().incrementTrainerRegistration();
+        then(gymMetrics).should().setActiveTrainers(1);
     }
+
+    @Test
+    @DisplayName("register: should throw when user is already a trainee") // ✅ YANGI TEST
+    void register_alreadyTrainee_throws() {
+        var req = new TrainerRegistrationRequest("Alice", "Smith", "Yoga");
+
+        given(generator.generateUsername("Alice", "Smith")).willReturn("Alice.Smith");
+        given(traineeRepository.existsByUserUsername("Alice.Smith")).willReturn(true);
+
+        assertThatThrownBy(() -> service.register(req))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("already registered as a trainee");
+
+        then(trainerRepository).should(never()).save(any());
+    }
+
 
     @Test
     @DisplayName("getProfile: should return profile when trainer exists")
@@ -79,16 +106,19 @@ class TrainerServiceImplTest {
     @Test
     @DisplayName("getProfile: should throw when trainer not found")
     void getProfile_notFound() {
-        given(trainerRepository.findByUserUsername("ghost")).willReturn(Optional.empty());
+        given(trainerRepository.findByUserUsername("ghost"))
+                .willReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.getProfile("ghost"))
                 .isInstanceOf(NotFoundException.class);
     }
 
+
     @Test
     @DisplayName("updateProfile: should update fields and return response")
     void updateProfile_success() {
         var req = new UpdateTrainerRequest("Alice.Smith", "Alice", "Jones", false);
+
         given(trainerRepository.findByUserUsername("Alice.Smith"))
                 .willReturn(Optional.of(sampleTrainer));
         given(userRepository.save(any())).willReturn(sampleUser);
@@ -100,22 +130,28 @@ class TrainerServiceImplTest {
         assertThat(resp.specialization()).isEqualTo("Yoga");
     }
 
+
     @Test
     @DisplayName("activate: should toggle isActive")
     void activate_success() {
         var req = new ActivateDeactivateRequest("Alice.Smith", false);
+
         given(trainerRepository.findByUserUsername("Alice.Smith"))
                 .willReturn(Optional.of(sampleTrainer));
         given(userRepository.save(any())).willReturn(sampleUser);
+        given(trainerRepository.countByUserIsActiveTrue()).willReturn(0L);
+        willDoNothing().given(gymMetrics).setActiveTrainers(anyInt());
 
         assertThatCode(() -> service.activate(req)).doesNotThrowAnyException();
         assertThat(sampleUser.getIsActive()).isFalse();
+        then(gymMetrics).should().setActiveTrainers(0);
     }
 
     @Test
     @DisplayName("activate: should throw when already in requested state")
     void activate_alreadyActive_throws() {
         var req = new ActivateDeactivateRequest("Alice.Smith", true);
+
         given(trainerRepository.findByUserUsername("Alice.Smith"))
                 .willReturn(Optional.of(sampleTrainer));
 

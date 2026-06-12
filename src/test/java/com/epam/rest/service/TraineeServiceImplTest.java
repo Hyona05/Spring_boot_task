@@ -4,6 +4,7 @@ import com.epam.rest.dto.request.*;
 import com.epam.rest.dto.response.*;
 import com.epam.rest.entity.*;
 import com.epam.rest.exception.NotFoundException;
+import com.epam.rest.metrics.GymMetrics;
 import com.epam.rest.repository.*;
 import com.epam.rest.service.impl.TraineeServiceImpl;
 import com.epam.rest.service.impl.UsernamePasswordGenerator;
@@ -24,17 +25,17 @@ import static org.mockito.BDDMockito.*;
 @DisplayName("TraineeServiceImpl Unit Tests")
 class TraineeServiceImplTest {
 
-    @Mock TraineeRepository traineeRepository;
-    @Mock TrainerRepository trainerRepository;
-    @Mock TrainingRepository trainingRepository;
-    @Mock UserRepository userRepository;
+    @Mock TraineeRepository         traineeRepository;
+    @Mock TrainerRepository         trainerRepository;
+    @Mock TrainingRepository        trainingRepository;
+    @Mock UserRepository            userRepository;
     @Mock UsernamePasswordGenerator generator;
-    @Mock BCryptPasswordEncoder passwordEncoder;
-
+    @Mock BCryptPasswordEncoder     passwordEncoder;
+    @Mock GymMetrics                gymMetrics;
     @InjectMocks TraineeServiceImpl service;
 
     private Trainee sampleTrainee;
-    private User sampleUser;
+    private User    sampleUser;
 
     @BeforeEach
     void setUp() {
@@ -58,16 +59,39 @@ class TraineeServiceImplTest {
     void register_success() {
         var req = new TraineeRegistrationRequest("John", "Doe",
                 LocalDate.of(1990, 1, 1), "Tashkent");
+
         given(generator.generateUsername("John", "Doe")).willReturn("John.Doe");
         given(generator.generatePassword()).willReturn("rawPass123");
         given(passwordEncoder.encode("rawPass123")).willReturn("encoded");
+        given(trainerRepository.existsByUserUsername("John.Doe")).willReturn(false); // ✅
         given(traineeRepository.save(any())).willReturn(sampleTrainee);
+        given(traineeRepository.countByUserIsActiveTrue()).willReturn(1L);
+        willDoNothing().given(gymMetrics).incrementTraineeRegistration();
+        willDoNothing().given(gymMetrics).setActiveTrainees(anyInt());
 
         RegistrationResponse resp = service.register(req);
 
         assertThat(resp.username()).isEqualTo("John.Doe");
         assertThat(resp.password()).isEqualTo("rawPass123");
         then(traineeRepository).should().save(any(Trainee.class));
+        then(gymMetrics).should().incrementTraineeRegistration();
+        then(gymMetrics).should().setActiveTrainees(1);
+    }
+
+    @Test
+    @DisplayName("register: should throw when user is already a trainer") // ✅ YANGI TEST
+    void register_alreadyTrainer_throws() {
+        var req = new TraineeRegistrationRequest("John", "Doe",
+                LocalDate.of(1990, 1, 1), "Tashkent");
+
+        given(generator.generateUsername("John", "Doe")).willReturn("John.Doe");
+        given(trainerRepository.existsByUserUsername("John.Doe")).willReturn(true);
+
+        assertThatThrownBy(() -> service.register(req))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("already registered as a trainer");
+
+        then(traineeRepository).should(never()).save(any());
     }
 
 
@@ -101,6 +125,7 @@ class TraineeServiceImplTest {
     void updateProfile_success() {
         var req = new UpdateTraineeRequest("John.Doe", "Jane", "Smith",
                 null, "Samarkand", false);
+
         given(traineeRepository.findByUserUsername("John.Doe"))
                 .willReturn(Optional.of(sampleTrainee));
         given(traineeRepository.save(any())).willReturn(sampleTrainee);
@@ -120,12 +145,15 @@ class TraineeServiceImplTest {
                 .willReturn(Optional.of(sampleTrainee));
         willDoNothing().given(trainingRepository).deleteAllByTraineeUserUsername("John.Doe");
         willDoNothing().given(traineeRepository).delete(sampleTrainee);
+        given(traineeRepository.countByUserIsActiveTrue()).willReturn(0L);
+        willDoNothing().given(gymMetrics).setActiveTrainees(anyInt());
 
         assertThatCode(() -> service.deleteProfile("John.Doe"))
                 .doesNotThrowAnyException();
 
         then(trainingRepository).should().deleteAllByTraineeUserUsername("John.Doe");
         then(traineeRepository).should().delete(sampleTrainee);
+        then(gymMetrics).should().setActiveTrainees(0);
     }
 
 
@@ -133,18 +161,23 @@ class TraineeServiceImplTest {
     @DisplayName("activate: should change isActive status")
     void activate_success() {
         var req = new ActivateDeactivateRequest("John.Doe", false);
+
         given(traineeRepository.findByUserUsername("John.Doe"))
                 .willReturn(Optional.of(sampleTrainee));
         given(userRepository.save(any())).willReturn(sampleUser);
+        given(traineeRepository.countByUserIsActiveTrue()).willReturn(0L);
+        willDoNothing().given(gymMetrics).setActiveTrainees(anyInt());
 
         assertThatCode(() -> service.activate(req)).doesNotThrowAnyException();
         assertThat(sampleUser.getIsActive()).isFalse();
+        then(gymMetrics).should().setActiveTrainees(0);
     }
 
     @Test
     @DisplayName("activate: should throw when already in requested state")
     void activate_alreadyActive_throws() {
         var req = new ActivateDeactivateRequest("John.Doe", true); // already true
+
         given(traineeRepository.findByUserUsername("John.Doe"))
                 .willReturn(Optional.of(sampleTrainee));
 
