@@ -9,6 +9,7 @@ import io.swagger.v3.oas.models.Components;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+
 @Configuration
 public class OpenApiConfig {
 
@@ -20,11 +21,13 @@ public class OpenApiConfig {
                         .version("1.0")
                         .description("REST API for managing trainees, trainers and trainings")
                         .contact(new Contact().name("EPAM").email("ozodaxon_sultonmurodova@epam.com")))
-                .addSecurityItem(new SecurityRequirement().addList("basicAuth"))
+                .addSecurityItem(new SecurityRequirement().addList("bearerAuth"))
                 .components(new Components()
-                        .addSecuritySchemes("basicAuth",
+                        .addSecuritySchemes("bearerAuth",
                                 new SecurityScheme()
+                                        .name("bearerAuth")
                                         .type(SecurityScheme.Type.HTTP)
-                                        .scheme("basic")));
+                                        .scheme("bearer")
+                                        .bearerFormat("JWT")));
     }
 }

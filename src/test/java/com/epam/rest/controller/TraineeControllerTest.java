@@ -3,16 +3,23 @@ package com.epam.rest.controller;
 import com.epam.rest.dto.request.*;
 import com.epam.rest.dto.response.*;
 import com.epam.rest.filter.AuthAndLoggingFilter;
-import com.epam.rest.repository.UserRepository;
+import com.epam.rest.security.JwtAuthenticationFilter;
+import com.epam.rest.security.JwtService;
+import com.epam.rest.security.TokenBlacklistService;
 import com.epam.rest.service.TraineeService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.FilterType;
 import org.springframework.http.MediaType;
+import org.springframework.security.authentication.AuthenticationProvider;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.web.authentication.logout.LogoutHandler;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -24,19 +31,26 @@ import static org.mockito.BDDMockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-@WebMvcTest(controllers = TraineeController.class,
+@WebMvcTest(
+        controllers = TraineeController.class,
         excludeFilters = @ComponentScan.Filter(
                 type = FilterType.ASSIGNABLE_TYPE,
-                classes = {AuthAndLoggingFilter.class}))
+                classes = {AuthAndLoggingFilter.class, JwtAuthenticationFilter.class}
+        )
+)
+@AutoConfigureMockMvc(addFilters = false)
 @DisplayName("TraineeController MockMvc Tests")
 class TraineeControllerTest {
 
-    @Autowired
-    MockMvc mockMvc;
-    @MockitoBean
-    TraineeService traineeService;
-    @MockitoBean
-    UserRepository userRepository;
+    @Autowired MockMvc mockMvc;
+
+    @MockitoBean TraineeService traineeService;
+    @MockitoBean JwtService jwtService;
+    @MockitoBean UserDetailsService userDetailsService;
+    @MockitoBean TokenBlacklistService tokenBlacklistService;
+    @MockitoBean PasswordEncoder passwordEncoder;
+    @MockitoBean AuthenticationProvider authenticationProvider;
+    @MockitoBean LogoutHandler logoutHandler;
 
     private ObjectMapper mapper;
 
@@ -110,8 +124,7 @@ class TraineeControllerTest {
     @Test
     @DisplayName("GET /api/trainees/{username}/trainings → 200")
     void getTrainings_returns200() throws Exception {
-        given(traineeService.getTrainings(eq("John.Doe"),
-                any(), any(), any(), any()))
+        given(traineeService.getTrainings(eq("John.Doe"), any(), any(), any(), any()))
                 .willReturn(List.of(new TrainingResponse(
                         "Morning Yoga", LocalDate.now(), "Yoga", 60, "trainer1")));
 

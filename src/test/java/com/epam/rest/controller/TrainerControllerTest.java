@@ -3,16 +3,23 @@ package com.epam.rest.controller;
 import com.epam.rest.dto.request.*;
 import com.epam.rest.dto.response.*;
 import com.epam.rest.filter.AuthAndLoggingFilter;
-import com.epam.rest.repository.UserRepository;
+import com.epam.rest.security.JwtAuthenticationFilter;
+import com.epam.rest.security.JwtService;
+import com.epam.rest.security.TokenBlacklistService;
 import com.epam.rest.service.TrainerService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.FilterType;
 import org.springframework.http.MediaType;
+import org.springframework.security.authentication.AuthenticationProvider;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.web.authentication.logout.LogoutHandler;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -23,19 +30,26 @@ import static org.mockito.BDDMockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-@WebMvcTest(controllers = TrainerController.class,
+@WebMvcTest(
+        controllers = TrainerController.class,
         excludeFilters = @ComponentScan.Filter(
                 type = FilterType.ASSIGNABLE_TYPE,
-                classes = {AuthAndLoggingFilter.class}))
+                classes = {AuthAndLoggingFilter.class, JwtAuthenticationFilter.class}
+        )
+)
+@AutoConfigureMockMvc(addFilters = false)
 @DisplayName("TrainerController MockMvc Tests")
 class TrainerControllerTest {
 
-    @Autowired
-    MockMvc mockMvc;
-    @MockitoBean
-    TrainerService trainerService;
-    @MockitoBean
-    UserRepository userRepository;
+    @Autowired MockMvc mockMvc;
+
+    @MockitoBean TrainerService trainerService;
+    @MockitoBean JwtService jwtService;
+    @MockitoBean UserDetailsService userDetailsService;
+    @MockitoBean TokenBlacklistService tokenBlacklistService;
+    @MockitoBean PasswordEncoder passwordEncoder;
+    @MockitoBean AuthenticationProvider authenticationProvider;
+    @MockitoBean LogoutHandler logoutHandler;
 
     private ObjectMapper mapper;
 
